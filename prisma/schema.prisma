@@ -1,0 +1,271 @@
+// CFT Drones — Sistema de Ordens de Serviço
+// Banco: SQLite em desenvolvimento. Para produção basta trocar o provider
+// para "postgresql" e o driver adapter em src/lib/db.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Usuários e auditoria
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  /// ADMIN | TECNICO | ATENDIMENTO (ver src/lib/roles.ts)
+  role         String   @default("ATENDIMENTO")
+  active       Boolean  @default(true)
+  /// Incrementado ao trocar a senha ou revogar acesso: invalida sessões antigas.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customersCreated    Customer[]           @relation("CustomerCreatedBy")
+  equipmentCreated    Equipment[]          @relation("EquipmentCreatedBy")
+  serviceOrders       ServiceOrder[]       @relation("ServiceOrderCreatedBy")
+  assignedOrders      ServiceOrder[]       @relation("ServiceOrderAssignedTo")
+  photosUploaded      ServiceOrderPhoto[]
+  historyEntries      ServiceOrderHistory[]
+  auditLogs           AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// CREATE | UPDATE | DELETE | LOGIN | LOGOUT | STATUS_CHANGE
+  action    String
+  entity    String
+  entityId  String?
+  /// JSON serializado com o diff / contexto da alteração.
+  data      String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Clientes e equipamentos
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  /// CPF | CNPJ
+  docType   String   @default("CPF")
+  /// Somente dígitos.
+  document  String?
+  phone     String?
+  whatsapp  String?
+  email     String?
+  zipCode   String?
+  street    String?
+  number    String?
+  complement String?
+  district  String?
+  city      String?
+  state     String?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  equipment     Equipment[]
+  serviceOrders ServiceOrder[]
+
+  @@unique([document])
+  @@index([name])
+  @@map("customers")
+}
+
+/// Catálogo de modelos (DJI Agras T50, Matrice 350 RTK, ...).
+model EquipmentModel {
+  id       String  @id @default(cuid())
+  /// Ver src/lib/catalog.ts (EQUIPMENT_CATEGORIES)
+  category String
+  brand    String
+  name     String
+  active   Boolean @default(true)
+  sortOrder Int    @default(0)
+
+  @@unique([brand, name])
+  @@index([category])
+  @@map("equipment_models")
+}
+
+model Equipment {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  category     String
+  brand        String?
+  model        String
+  serialNumber String?
+  assetTag     String?
+  notes        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("EquipmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  serviceOrders ServiceOrder[]
+
+  @@index([customerId])
+  @@index([serialNumber])
+  @@index([model])
+  @@map("equipment")
+}
+
+// ---------------------------------------------------------------------------
+// Ordens de serviço
+// ---------------------------------------------------------------------------
+
+/// Tabela de domínio dos status — permite alterar rótulos/cores sem deploy.
+model ServiceOrderStatus {
+  id        String  @id @default(cuid())
+  code      String  @unique
+  label     String
+  /// Token de cor usado pela UI (ver src/lib/status.ts).
+  color     String
+  sortOrder Int     @default(0)
+  isFinal   Boolean @default(false)
+  active    Boolean @default(true)
+
+  @@map("service_order_status")
+}
+
+model ServiceOrder {
+  id     String @id @default(cuid())
+  /// OS-2026-000145
+  number String @unique
+  /// Sequencial dentro do ano, usado para gerar o número.
+  year   Int
+  seq    Int
+  /// Token do link público (/os/{number}/{token}).
+  publicToken String @unique
+
+  customerId  String
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  equipmentId String
+  equipment   Equipment  @relation(fields: [equipmentId], references: [id])
+
+  /// Código em ServiceOrderStatus.code
+  status          String   @default("RECEBIDA")
+  /// PREVENTIVA | CORRETIVA | DIAGNOSTICO | GARANTIA | REVISAO | OUTRO
+  maintenanceType String
+  maintenanceTypeOther String?
+
+  entryAt         DateTime
+  customerReport  String?
+  requestedService String?
+  entryNotes      String?
+
+  /// Observações internas — nunca expostas na página pública.
+  internalNotes String?
+
+  createdById String?
+  createdBy   User?   @relation("ServiceOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignedToId String?
+  assignedTo   User?  @relation("ServiceOrderAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items   ServiceOrderItem[]
+  photos  ServiceOrderPhoto[]
+  history ServiceOrderHistory[]
+
+  @@unique([year, seq])
+  @@index([status])
+  @@index([customerId])
+  @@index([equipmentId])
+  @@index([entryAt])
+  @@map("service_orders")
+}
+
+/// Itens entregues pelo cliente (checklist de entrada).
+model ServiceOrderItem {
+  id             String       @id @default(cuid())
+  serviceOrderId String
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  label          String
+  quantity       Int          @default(1)
+  notes          String?
+  /// true quando o item não veio do checklist padrão.
+  isCustom       Boolean      @default(false)
+  sortOrder      Int          @default(0)
+
+  @@index([serviceOrderId])
+  @@map("service_order_items")
+}
+
+/// Itens padrão do checklist de entrada (configuráveis).
+model ChecklistTemplateItem {
+  id        String  @id @default(cuid())
+  label     String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  @@map("checklist_template_items")
+}
+
+model ServiceOrderPhoto {
+  id             String       @id @default(cuid())
+  serviceOrderId String
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  /// EQUIPAMENTO | NUMERO_SERIE | AVARIAS | ACESSORIOS | BATERIAS | EMBALAGEM | OUTROS
+  category       String       @default("EQUIPAMENTO")
+  description    String?
+  /// Nome do arquivo no storage (nunca servido diretamente; ver /api/photos/[id]).
+  storageKey     String
+  mimeType       String
+  size           Int
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  uploadedById String?
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderId])
+  @@map("service_order_photos")
+}
+
+model ServiceOrderHistory {
+  id             String       @id @default(cuid())
+  serviceOrderId String
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  /// CREATED | STATUS_CHANGE | PHOTOS_ADDED | NOTE | UPDATED | WHATSAPP_SENT
+  type       String
+  message    String
+  fromStatus String?
+  toStatus   String?
+  /// Visível na página pública do cliente.
+  isPublic   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderId, createdAt])
+  @@map("service_order_history")
+}
