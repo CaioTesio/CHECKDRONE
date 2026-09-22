@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth";
-import { generateOsNumber, nextSequence } from "@/lib/os-number";
+import { formatOsNumber, nextSequence, generatePublicToken } from "@/lib/os-number";
 import { createOrderSchema, type CreateOrderInput } from "@/server/validation";
 import { actionError, type FormResult } from "./result";
 
@@ -46,51 +46,49 @@ export async function createServiceOrderAction(
     if (equipment.customerId !== customerId)
       return { ok: false, error: "Equipamento não pertence ao cliente" };
 
-    // Generate order number
-    const sequence = await nextSequence();
-    const number = generateOsNumber(sequence);
+    const now = new Date();
+    const year = now.getFullYear();
 
-    // Create service order with all related data
-    const serviceOrder = await prisma.serviceOrder.create({
-      data: {
-        number,
-        customerId,
-        equipmentId,
-        entryAt,
-        status: "RECEBIDA",
-        maintenanceType,
-        maintenanceTypeOther: rest.maintenanceTypeOther,
-        customerReport: rest.customerReport,
-        requestedService: rest.requestedService,
-        entryNotes: rest.entryNotes,
-        createdById: user.id,
-        assignedToId: user.role === "TECNICO" ? user.id : undefined,
-        items: {
-          create: items.map((item) => ({
-            label: item.label,
-            quantity: item.quantity,
-            notes: item.notes,
-            isCustom: item.isCustom ?? false,
-          })),
-        },
-        photos: photos.length
-          ? {
-              create: photos.map((photo) => ({
-                photoId: photo.id,
-                category: photo.category,
-                description: photo.description,
-                uploadedById: user.id,
-              })),
-            }
-          : undefined,
-        history: {
-          create: {
-            status: "RECEBIDA",
-            changedAt: new Date(),
-            changedById: user.id,
+    // Create service order with all related data (in transaction for atomicity)
+    const serviceOrder = await prisma.$transaction(async (tx) => {
+      const seq = await nextSequence(tx, year);
+      const number = formatOsNumber(year, seq);
+
+      return tx.serviceOrder.create({
+        data: {
+          number,
+          year,
+          seq,
+          customerId,
+          equipmentId,
+          entryAt,
+          status: "RECEBIDA",
+          maintenanceType,
+          maintenanceTypeOther: rest.maintenanceTypeOther,
+          customerReport: rest.customerReport,
+          requestedService: rest.requestedService,
+          entryNotes: rest.entryNotes,
+          publicToken: generatePublicToken(),
+          createdById: user.id,
+          assignedToId: user.role === "TECNICO" ? user.id : undefined,
+          items: {
+            create: items.map((item) => ({
+              label: item.label,
+              quantity: item.quantity,
+              notes: item.notes,
+              isCustom: item.isCustom ?? false,
+            })),
+          },
+          history: {
+            create: {
+              type: "CREATED",
+              message: "Ordem de serviço criada",
+              toStatus: "RECEBIDA",
+              user: { connect: { id: user.id } },
+            },
           },
         },
-      },
+      });
     });
 
     await audit({
