@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/badge";
 import { InfoList, InfoItem } from "@/components/info-list";
 import { PhotoUploadForm } from "@/components/orders/photo-upload-form";
 import { ServiceOrderPhotos } from "@/components/orders/service-order-photos";
+import { WhatsAppShareButton } from "@/components/orders/whatsapp-share-button";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/roles";
 import { prisma } from "@/lib/db";
@@ -234,6 +235,21 @@ export default async function ServiceOrderPage({
 
           {/* Ações */}
           <div className="space-y-2">
+            {can(user.role, "os:addNote") && order.customer?.phone && (
+              <WhatsAppShareButton
+                order={{
+                  id: order.id,
+                  number: order.number,
+                  publicToken: order.publicToken,
+                  maintenanceType: order.maintenanceType,
+                  maintenanceTypeOther: order.maintenanceTypeOther,
+                  entryAt: order.entryAt,
+                  items: order.items,
+                  customer: order.customer,
+                  equipment: order.equipment,
+                }}
+              />
+            )}
             <Link href="/ordens" className="block">
               <Button variant="ghost" className="gap-2 w-full justify-start">
                 <ArrowLeft className="h-4 w-4" />
