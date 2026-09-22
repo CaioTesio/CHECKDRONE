@@ -35,7 +35,8 @@ export const PERMISSIONS = {
   "customer:view": ["ADMIN", "TECNICO", "ATENDIMENTO"],
   "customer:manage": ["ADMIN", "ATENDIMENTO"],
   "equipment:view": ["ADMIN", "TECNICO", "ATENDIMENTO"],
-  "equipment:manage": ["ADMIN", "ATENDIMENTO", "TECNICO"],
+  "equipment:create": ["ADMIN", "ATENDIMENTO"],
+  "equipment:update": ["ADMIN", "ATENDIMENTO", "TECNICO"],
   "user:manage": ["ADMIN"],
   "audit:view": ["ADMIN"],
 } as const satisfies Record<string, readonly Role[]>;

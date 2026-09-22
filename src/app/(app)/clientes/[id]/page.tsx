@@ -162,7 +162,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
               description={`${customer.equipment.length} equipamento(s)`}
               icon={<Plane className="h-[18px] w-[18px]" />}
               action={
-                can(user.role, "equipment:manage") ? (
+                can(user.role, "equipment:create") ? (
                   <Link href={`/equipamentos/novo?cliente=${customer.id}`}>
                     <Button size="sm" variant="secondary">
                       <Plus className="h-4 w-4" />

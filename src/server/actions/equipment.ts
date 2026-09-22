@@ -24,7 +24,7 @@ export async function createEquipmentAction(
   formData: FormData,
 ): Promise<FormResult> {
   try {
-    const user = await requirePermission("equipment:manage");
+    const user = await requirePermission("equipment:create");
     const parsed = parse(formData);
     if (!parsed.success) return actionError(parsed.error);
 
@@ -63,7 +63,7 @@ export async function updateEquipmentAction(
   formData: FormData,
 ): Promise<FormResult> {
   try {
-    const user = await requirePermission("equipment:manage");
+    const user = await requirePermission("equipment:update");
     const id = String(formData.get("id") ?? "");
     if (!id) return { ok: false, error: "Equipamento não informado" };
 
