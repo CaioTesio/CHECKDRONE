@@ -5,8 +5,10 @@ import { prisma } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth";
 import { formatOsNumber, nextSequence, generatePublicToken } from "@/lib/os-number";
+import { isValidStatus } from "@/lib/status";
 import { createOrderSchema, type CreateOrderInput } from "@/server/validation";
 import { actionError, type FormResult } from "./result";
+import { z } from "zod";
 
 export async function createServiceOrderAction(
   _prev: FormResult,
@@ -115,6 +117,100 @@ export async function createServiceOrderAction(
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Não foi possível criar a O.S.",
+    };
+  }
+}
+
+const updateStatusSchema = z.object({
+  orderId: z.string().cuid(),
+  newStatus: z.string().min(1),
+  internalNotes: z.string().max(2000).optional(),
+});
+
+export async function updateServiceOrderStatusAction(
+  _prev: FormResult,
+  formData: FormData,
+): Promise<FormResult> {
+  try {
+    const user = await requirePermission("os:changeStatus");
+
+    const dataStr = formData.get("data");
+    if (!dataStr) return { ok: false, error: "Dados não fornecidos" };
+
+    let parsed;
+    try {
+      const data = JSON.parse(String(dataStr)) as unknown;
+      parsed = updateStatusSchema.safeParse(data);
+    } catch {
+      return { ok: false, error: "Dados inválidos" };
+    }
+
+    if (!parsed.success) return actionError(parsed.error);
+
+    const { orderId, newStatus, internalNotes } = parsed.data;
+
+    // Validate status
+    if (!isValidStatus(newStatus)) {
+      return { ok: false, error: "Status inválido" };
+    }
+
+    // Verify order exists
+    const order = await prisma.serviceOrder.findUnique({
+      where: { id: orderId },
+      select: { id: true, number: true, status: true, customerId: true, equipmentId: true },
+    });
+
+    if (!order) return { ok: false, error: "Ordem de serviço não encontrada" };
+    if (order.status === newStatus)
+      return { ok: false, error: "O novo status é igual ao status atual" };
+
+    // Update order in transaction
+    const updated = await prisma.$transaction(async (tx) => {
+      const closedAt = newStatus === "FINALIZADA" || newStatus === "CANCELADA" ? new Date() : null;
+
+      const upd = await tx.serviceOrder.update({
+        where: { id: orderId },
+        data: {
+          status: newStatus,
+          ...(internalNotes && { internalNotes }),
+          ...(closedAt && { closedAt }),
+          history: {
+            create: {
+              type: "STATUS_CHANGE",
+              message: `Status alterado para ${newStatus}`,
+              fromStatus: order.status,
+              toStatus: newStatus,
+              user: { connect: { id: user.id } },
+            },
+          },
+        },
+      });
+
+      return upd;
+    });
+
+    await audit({
+      userId: user.id,
+      action: "STATUS_CHANGE",
+      entity: "ServiceOrder",
+      entityId: orderId,
+      data: {
+        number: order.number,
+        fromStatus: order.status,
+        toStatus: newStatus,
+      },
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/ordens");
+    revalidatePath(`/ordens/${orderId}`);
+
+    return { ok: true, id: orderId, message: `Status atualizado para ${newStatus}` };
+  } catch (error) {
+    console.error("[service-order-update-status]", error);
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Não foi possível atualizar o status",
     };
   }
 }
