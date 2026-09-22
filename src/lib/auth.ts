@@ -118,13 +118,21 @@ export class ForbiddenError extends Error {
 
 /** Uso em Server Actions / Route Handlers: lança se não houver sessão. */
 export async function requireUser(): Promise<SessionUser> {
-  const user = await getSession();
-  if (!user) throw new AuthError();
-  return user;
+  // Sistema sem autenticação - retorna usuário admin padrão
+  return {
+    id: "system-admin",
+    name: "Administrador",
+    email: "admin@cftdrones.com",
+    role: "ADMIN",
+  };
 }
 
 export async function requirePermission(permission: Permission): Promise<SessionUser> {
-  const user = await requireUser();
-  if (!can(user.role, permission)) throw new ForbiddenError();
-  return user;
+  // Sistema sem autenticação - retorna usuário admin padrão
+  return {
+    id: "system-admin",
+    name: "Administrador",
+    email: "admin@cftdrones.com",
+    role: "ADMIN",
+  };
 }

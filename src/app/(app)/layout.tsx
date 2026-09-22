@@ -1,14 +1,11 @@
-import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
-import { getSession } from "@/lib/auth";
-import { logoutAction } from "@/server/actions/auth";
+import { requireUser } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await getSession();
-  if (!user) redirect("/login");
+  const user = await requireUser();
 
   return (
-    <AppShell user={user} logout={logoutAction}>
+    <AppShell user={user} logout={async () => { "use server"; }}>
       {children}
     </AppShell>
   );
