@@ -6,7 +6,10 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
 import { InfoList, InfoItem } from "@/components/info-list";
+import { PhotoUploadForm } from "@/components/orders/photo-upload-form";
+import { ServiceOrderPhotos } from "@/components/orders/service-order-photos";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/roles";
 import { prisma } from "@/lib/db";
 import { formatDateTime, formatDate, formatTime } from "@/lib/format";
 import { MAINTENANCE_TYPES } from "@/lib/catalog";
@@ -31,7 +34,10 @@ export default async function ServiceOrderPage({
       },
       createdBy: { select: { name: true } },
       assignedTo: { select: { name: true } },
-      photos: true,
+      photos: {
+        orderBy: { createdAt: "desc" },
+        include: { uploadedBy: { select: { name: true } } },
+      },
     },
   });
 
@@ -142,6 +148,23 @@ export default async function ServiceOrderPage({
               </CardBody>
             </Card>
           )}
+
+          {/* Fotos */}
+          <Card>
+            <CardHeader
+              title="Fotos"
+              description={`${order.photos.length} foto${order.photos.length !== 1 ? "s" : ""}`}
+            />
+            <CardBody className="pt-0 space-y-6">
+              {can(user.role, "os:addPhotos") && (
+                <PhotoUploadForm orderId={order.id} />
+              )}
+              <ServiceOrderPhotos photos={order.photos.map((p) => ({
+                ...p,
+                uploadedBy: p.uploadedBy || { name: "Anônimo" },
+              }))} />
+            </CardBody>
+          </Card>
 
           {/* Histórico */}
           <Card>
