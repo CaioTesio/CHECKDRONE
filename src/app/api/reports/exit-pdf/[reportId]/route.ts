@@ -14,10 +14,10 @@ function formatDate(date: Date): string {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { reportId: string } },
+  { params }: { params: Promise<{ reportId: string }> },
 ) {
   try {
-    const { reportId } = params;
+    const { reportId } = await params;
 
     const report = await prisma.serviceOrderExitReport.findUnique({
       where: { id: reportId },
