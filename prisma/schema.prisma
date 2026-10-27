@@ -28,12 +28,13 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  customersCreated    Customer[]           @relation("CustomerCreatedBy")
-  equipmentCreated    Equipment[]          @relation("EquipmentCreatedBy")
-  serviceOrders       ServiceOrder[]       @relation("ServiceOrderCreatedBy")
-  assignedOrders      ServiceOrder[]       @relation("ServiceOrderAssignedTo")
+  customersCreated    Customer[]            @relation("CustomerCreatedBy")
+  equipmentCreated    Equipment[]           @relation("EquipmentCreatedBy")
+  serviceOrders       ServiceOrder[]        @relation("ServiceOrderCreatedBy")
+  assignedOrders      ServiceOrder[]        @relation("ServiceOrderAssignedTo")
   photosUploaded      ServiceOrderPhoto[]
   historyEntries      ServiceOrderHistory[]
+  exitReportsCreated  ServiceOrderExitReport[]
   auditLogs           AuditLog[]
 
   @@index([email])
@@ -191,9 +192,10 @@ model ServiceOrder {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  items   ServiceOrderItem[]
-  photos  ServiceOrderPhoto[]
-  history ServiceOrderHistory[]
+  items      ServiceOrderItem[]
+  photos     ServiceOrderPhoto[]
+  history    ServiceOrderHistory[]
+  exitReport ServiceOrderExitReport?
 
   @@unique([year, seq])
   @@index([status])
@@ -268,4 +270,86 @@ model ServiceOrderHistory {
 
   @@index([serviceOrderId, createdAt])
   @@map("service_order_history")
+}
+
+// ---------------------------------------------------------------------------
+// Checklist de Saída (Exit Report)
+// ---------------------------------------------------------------------------
+
+/// Relatório de saída/finalização do serviço
+model ServiceOrderExitReport {
+  id             String       @id @default(cuid())
+  serviceOrderId String       @unique
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+
+  /// Data e hora da finalização
+  completedAt    DateTime
+
+  /// Peças trocadas/reparadas
+  replacedParts  ServiceOrderReplacedPart[]
+
+  /// Estado dos motores (DJI T40)
+  motorStatus    ServiceOrderMotorStatus[]
+
+  /// Observações finais
+  finalNotes     String?
+
+  /// JSON com dados de falhas detectadas
+  issuesFound    String?
+
+  /// Gerado automaticamente quando relatório é criado
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderId])
+  @@map("service_order_exit_reports")
+}
+
+model ServiceOrderExitReportUser {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  @@map("service_order_exit_report_users")
+}
+
+/// Peças trocadas durante o serviço
+model ServiceOrderReplacedPart {
+  id             String                @id @default(cuid())
+  exitReportId   String
+  exitReport     ServiceOrderExitReport @relation(fields: [exitReportId], references: [id], onDelete: Cascade)
+
+  /// Nome da peça (Ex: "Motor 1", "Bateria", "Propeleres")
+  partName       String
+  /// Descrição do problema/ação
+  description    String?
+  /// Quantidade substituída
+  quantity       Int                    @default(1)
+  sortOrder      Int                    @default(0)
+
+  @@index([exitReportId])
+  @@map("service_order_replaced_parts")
+}
+
+/// Status dos motores (para DJI T40 ou similares)
+model ServiceOrderMotorStatus {
+  id             String                @id @default(cuid())
+  exitReportId   String
+  exitReport     ServiceOrderExitReport @relation(fields: [exitReportId], references: [id], onDelete: Cascade)
+
+  /// Motor 1, 2, 3, 4, etc
+  motorNumber    Int
+  /// "OK" | "COM_FALHA" | "AQUECIMENTO" | "VIBRACAO" | "RUIDO" | "OUTRO"
+  status         String                @default("OK")
+  /// Descrição da falha, se houver
+  notes          String?
+
+  @@unique([exitReportId, motorNumber])
+  @@index([exitReportId])
+  @@map("service_order_motor_status")
 }
