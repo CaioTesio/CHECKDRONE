@@ -110,11 +110,7 @@ export async function createExitReportAction(
   }
 }
 
-/**
- * Gera PDF do relatório de saída
- * Usado para download e envio ao cliente via WhatsApp
- */
-export async function generateExitReportPDF(reportId: string) {
+export async function getExitReportForDownload(reportId: string) {
   try {
     const report = await prisma.serviceOrderExitReport.findUnique({
       where: { id: reportId },
@@ -123,11 +119,14 @@ export async function generateExitReportPDF(reportId: string) {
           include: {
             customer: true,
             equipment: true,
-            photos: true,
           },
         },
-        replacedParts: true,
-        motorStatus: true,
+        replacedParts: {
+          orderBy: { sortOrder: "asc" },
+        },
+        motorStatus: {
+          orderBy: { motorNumber: "asc" },
+        },
         createdBy: true,
       },
     });
@@ -136,20 +135,15 @@ export async function generateExitReportPDF(reportId: string) {
       throw new Error("Relatório não encontrado");
     }
 
-    // Aqui você integraria com uma biblioteca como jsPDF ou pdfkit
-    // Por enquanto, retornamos os dados estruturados
     return {
       ok: true,
-      data: {
-        report,
-        generatedAt: new Date().toISOString(),
-      },
+      report,
     };
   } catch (error) {
-    console.error("[generateExitReportPDF]", error);
+    console.error("[getExitReportForDownload]", error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Erro ao gerar PDF",
+      error: error instanceof Error ? error.message : "Erro ao buscar relatório",
     };
   }
 }

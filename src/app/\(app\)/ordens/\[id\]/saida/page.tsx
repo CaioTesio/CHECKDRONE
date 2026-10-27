@@ -66,8 +66,13 @@ export default function ExitChecklist({ params }: { params: { id: string } }) {
   };
 
   React.useEffect(() => {
-    if (state?.ok) {
+    if (state?.ok && state.reportId) {
       toast("Relatório de saída criado com sucesso!", "success");
+      // Aguarda um pouco antes de iniciar o download para garantir que o arquivo foi criado
+      setTimeout(() => {
+        const downloadLink = `/api/reports/exit-pdf/${state.reportId}`;
+        window.location.href = downloadLink;
+      }, 500);
     } else if (state?.error) {
       toast(state.error, "error");
     }
